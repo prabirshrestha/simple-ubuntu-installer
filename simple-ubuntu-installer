@@ -5,7 +5,7 @@ set -eo pipefail
 trap quit:no_message INT
 
 INSTALL_SCRIPT=install_os.sh
-EDITOR=vim
+EDITOR=vi
 
 select_disk() {
    select ENTRY in $(ls /dev/disk/by-id/ | grep -v '\-part*');
@@ -289,9 +289,12 @@ write_script() {
         echo "  chroot_exec \"mkdir -p /etc/cmdline.d\""
         echo "  echo 'ip=dhcp rd.neednet=1' > /mnt/etc/cmdline.d/dracut-network.conf"
         echo "  echo 'add_dracutmodules+=\" crypt-ssh \"' >> /mnt/etc/zfsbootmenu/dracut.conf.d/dropbear.conf"
-        echo "  echo 'install_optional_items+=\" /etc/cmdline.d/dracut-network.conf \"' >> /mnt/etc/zfsbootmenu/dracut.conf.d/dropbear.conf"
-        echo "  echo 'add_dracutmodules+=\" crypt-ssh \"' >> /mnt/etc/dracut.conf.d/dropbear.conf"
-        echo "  echo 'install_optional_items+=\" /etc/cmdline.d/dracut-network.conf \"' >> /mnt/etc/dracut.conf.d/dropbear.conf"
+        echo "  echo 'install_items+=\" /etc/cmdline.d/dracut-network.conf \"' >> /mnt/etc/zfsbootmenu/dracut.conf.d/dropbear.conf"
+        echo "  echo 'install_items+=\" /etc/cmdline.d/dracut-network.conf \"' >> /mnt/etc/zfsbootmenu/dracut.conf.d/dropbear.conf"
+        echo "  chroot_exec \"echo \$DISKPASSWORD > /etc/zfs/zroot.key\""
+        echo "  chroot_exec \"chmod 600 /etc/zfs/zroot.key\""
+        echo "  echo 'install_items+=\" /etc/zfs/zroot.key \"' >> /mnt/etc/dracut.conf.d/zfskey.conf"
+        echo "  chroot_exec \"zfs change-key -o keylocation=file:///etc/zfs/zroot.key -o keyformat=passphrase zroot\""
         echo "  chroot_exec \"dracut -v -f --regenerate-all\""
         echo "fi"
         echo
