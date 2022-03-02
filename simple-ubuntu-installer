@@ -1,0 +1,325 @@
+#!/bin/bash
+
+# scp ./simple-ubuntu-installer username@remote:/path
+set -eo pipefail
+trap quit:no_message INT
+
+INSTALL_SCRIPT=install_os.sh
+EDITOR=vim
+
+select_disk() {
+   select ENTRY in $(ls /dev/disk/by-id/ | grep -v '\-part*');
+       do
+           DISK="/dev/disk/by-id/$ENTRY"
+           break
+       done
+}
+
+if [ -z "$DISK" ]; then
+    select_disk
+fi
+
+read -p "Full disk wipe. This might be required to clear ZFS metdata (y/n): " FULLDISKWIPE
+read -p "Remote unlock (y/n): " REMOTEUNLOCK
+[ -d /sys/firmware/efi ] && IS_EFI=true || IS_EFI=false
+UUID=$(dd if=/dev/urandom bs=1 count=100 2>/dev/null | tr -dc 'a-z0-9' | cut -c-6)
+
+write_script() {
+	(
+        echo "#!/usr/bin/env bash"
+        echo "#"
+        echo "# Please review the install script below"
+        echo "#"
+        echo "set -euo pipefail"
+        echo
+        echo "export DISK=$DISK"
+        echo "export BOOTDISK=\"\${DISK}-part1\""
+        echo "export ROOTDISK=\"\${DISK}-part2\""
+        echo "export UUID=$UUID"
+        echo "export IS_EFI=$IS_EFI"
+        echo "export FULLDISKWIPE=$FULLDISKWIPE"
+        echo "export REMOTEUNLOCK=$REMOTEUNLOCK"
+        echo "export NETPLANSETUPFILE=netplansetup.yaml"
+        echo "export SSHPORT=22"
+        echo "# hirsute is Ubuntu 21.04+ currently required for zfs 2.x+"
+        echo "export OSCODENAME=impish"
+        echo "export OSREPO=http://archive.ubuntu.com/ubuntu"
+        echo "export OSREPOSECURITY=http://security.ubuntu.com/ubuntu"
+        echo "function chroot_exec {"
+        echo "  chroot /mnt /usr/bin/env DISK=\$DISK BOOTDISK=\$BOOTDISK ROOTDISK=\$ROOTDISK UUID=\$UUID IS_EFI=\$IS_EFI SSHPORT=\$SSHPORT bash -c \"\$1\""
+        echo "}"
+        echo
+        echo "password1=x"
+        echo "password2=y"
+        echo "until [[ \$password1 == \$password2 ]]; do"
+        echo "  read -s -p \"Enter ZFS disk encryption password (empty to disable encryption): \" password1"
+        echo "  echo"
+        echo "  read -s -p \"Re-Enter ZFS disk encryption password: \" password2"
+        echo "  echo"
+        echo "  DISKPASSWORD=\$password1"
+        echo "done"
+        echo "password1=x"
+        echo "password2=y"
+        echo "until [[ \$password1 == \$password2 ]]; do"
+        echo "  read -s -p \"Enter root password: \" password1"
+        echo "  echo"
+        echo "  read -s -p \"Re-Enter root password: \" password2"
+        echo "  echo"
+        echo "  USERPASSWORD=\$password1"
+        echo "done"
+        echo
+        echo "swapoff --all"
+        echo "apt-get install --yes pv"
+        echo "[ \"\${FULLDISKWIPE}\" = \"y\" ] && pv --timer --rate --stop-at-size -s \"\$(blockdev --getsize64 \$DISK)\" /dev/zero > $DISK"
+        echo "sgdisk --zap-all \$DISK # zap anything existing"
+        echo "sgdisk -o \$DISK # write a new GPT partition with protective MBR"
+        echo
+        echo "# Partition 1: 512M. EFI System Partition and Legacy BIOS boot with Legacy BOOT ON"
+        echo "sgdisk -n 1:1M:+512M \$DISK   # create partition 1 - first 512M"
+        echo "sgdisk -t 1:EF00 \$DISK       # Set partition type to ESP"
+        echo "sgdisk -A 1:set:2 \$DISK      # Turn legacy boot attribute on"
+        echo "sgdisk -c:1:BOOT \$DISK       # Set partition name to BOOT"
+        echo
+        echo "# Partition 2: 0:0. ZFS Linux System Partition"
+        echo "sgdisk -n 2:0:0 \$DISK        # Partition 2 - everything but the first 512M"
+        echo "sgdisk -t 2:BE00 \$DISK       # Set partition type to Linux"
+        echo "sgdisk -c:2:ZROOT \$DISK      # Set partition name to ZROOT"
+        echo
+        echo "partprobe && partx -v \$DISK && udevadm trigger && udevadm settle && sleep 1 && sgdisk --print \$DISK && lsblk # run partx to notify kernel and sleep for partition table to be updated"
+        echo "[ ! -f /etc/hostid ] && zgenhostid # generate /etc/hostid"
+        echo
+        echo "sleep 1"
+        echo "# create zfs pool"
+        echo "if [[ \"\$DISKPASSWORD\" == \"\" ]]; then"
+        echo "  ZFSENCRYPTIONOPTIONS="
+        echo "else"
+        echo "  ZFSENCRYPTIONOPTIONS=\"-O encryption=aes-256-gcm -O keylocation=prompt -O keyformat=passphrase\""
+        echo "fi"
+        echo "echo -n \"\$DISKPASSWORD\" | zpool create -f -o ashift=12 \\"
+        echo " -O compression=lz4 \\"
+        echo " -O acltype=posixacl \\"
+        echo " -O xattr=sa \\"
+        echo " -O relatime=on \\"
+        echo " -o autotrim=on \\"
+        echo " \$ZFSENCRYPTIONOPTIONS \\"
+        echo " -m none zroot \$ROOTDISK"
+        echo
+        echo "zfs create -o mountpoint=none zroot/ROOT"
+        echo "zfs create -o mountpoint=/ -o canmount=noauto zroot/ROOT/ubuntu"
+        echo "zfs create -o mountpoint=/home zroot/home"
+        echo
+        echo "# export, then re-import with a temporary mount of /mnt"
+        echo "zpool export zroot"
+        echo "zpool import -N -R /mnt zroot"
+        echo "[[ \"\$DISKPASSWORD\" != \"\" ]] && echo -n \"\$DISKPASSWORD\" | zfs load-key zroot"
+        echo "zfs mount zroot/ROOT/ubuntu"
+        echo "zfs mount zroot/home"
+        echo "mount | grep mnt # verify that everything is mounted correctly"
+        echo
+        echo "# remove default debootstrap and install ubuntu specific one so that we can install hirstue so it works when running under debian rescue system"
+        echo "apt remove --yes debootstrap || true"
+        echo "rm -rf /tmp/debootstrap"
+        echo "mkdir -p /tmp/debootstrap"
+        echo "pushd /tmp/debootstrap"
+        echo "wget https://mirrors.kernel.org/ubuntu/pool/main/d/debootstrap/debootstrap_1.0.124_all.deb"
+        echo "ar -x *.deb"
+        echo "zcat /tmp/debootstrap/data.tar.gz | tar xv"
+        echo "cp -r usr /"
+        echo "popd"
+        echo "rm -rf /tmp/debootstrap"
+        echo
+        echo "debootstrap --arch=amd64 \$OSCODENAME "/mnt" \"\$OSREPO\""
+        echo "cp /etc/hostid /mnt/etc/"
+        echo "cp /etc/hostname /mnt/etc/"
+        echo "cp /etc/resolv.conf /mnt/etc/"
+        echo
+        echo "cat > /mnt/etc/apt/sources.list <<- EOF"
+        echo "deb \$OSREPO \$OSCODENAME main restricted universe multiverse"
+        echo "deb \$OSREPO \$OSCODENAME-updates main restricted universe multiverse"
+        echo "deb \$OSREPO \$OSCODENAME-backports main restricted universe multiverse"
+        echo "deb \$OSREPOSECURITY \$OSCODENAME-security main restricted universe multiverse"
+        echo "EOF"
+        echo
+        echo "mount -t proc proc /mnt/proc"
+        echo "mount -t sysfs sys /mnt/sys"
+        echo "mount -B /dev /mnt/dev"
+        echo "mount -t devpts pts /mnt/dev/pts"
+        echo
+        echo "# Basic OS Configuration"
+        echo "chroot_exec \"apt update\""
+        echo "chroot_exec \"ln -sf /usr/share/zoneinfo/America/Los_Angeles /etc/localtime && dpkg-reconfigure tzdata -f noninteractive\""
+        echo "cat > /mnt/etc/default/locale <<-EOF"
+	echo "LANG=\"en_US.UTF-8\""
+	echo "LANGUAGE=\"en_US:en\""
+        echo "EOF"
+        echo "cat > /mnt/etc/locale.gen <<-EOF"
+	echo "en_US.UTF-8 UTF-8"
+        echo "EOF"
+        echo "chroot_exec \"dpkg-reconfigure locales -f noninteractive\""
+        echo "cat > /mnt/etc/default/keyboard <<-EOF"
+	echo "XKBOPTIONS=\"caps:escape\""
+        echo "EOF"
+        echo "chroot_exec \"dpkg-reconfigure keyboard-configuration -f noninteractive\""
+        echo "chroot_exec \"echo root:\$USERPASSWORD | chpasswd\""
+        echo
+        echo "# Make sure the kernel is installed and configured before ZFS"
+        echo "chroot_exec \"apt-get --yes --quiet install --no-install-recommends linux-headers-generic linux-image-generic\""
+        echo "chroot_exec \"apt-get --yes --quiet install zfsutils-linux zfs-zed\""
+        echo
+        echo "chroot_exec \"apt-get install --yes curl\""
+        echo
+        echo "# ZFS configuration"
+        echo "# to more quickly disover and import pools on boot, we need to set a pool cachefile"
+        echo "chroot_exec \"zpool set cachefile=/etc/zfs/zpool.cache zroot\""
+        echo "# Configure our default boot environment"
+        echo "chroot_exec \"zpool set bootfs=zroot/ROOT/ubuntu zroot\""
+        echo "# Enable systemd zfs services"
+        echo "chroot_exec \"systemctl enable zfs.target\""
+        echo "chroot_exec \"systemctl enable zfs-import-cache\""
+        echo "chroot_exec \"systemctl enable zfs-mount\""
+        echo "chroot_exec \"systemctl enable zfs-import.target\""
+        echo
+        echo "# Mount a tmpfs to /tmp"
+        echo "chroot_exec \"cp /usr/share/systemd/tmp.mount /etc/systemd/system/\""
+        echo "chroot_exec \"systemctl enable tmp.mount\""
+        echo
+        echo "# Configure Dracut to load ZFS support"
+        echo "chroot_exec \"apt-get --yes install dracut-core zfs-dracut\""
+        echo "cat << EOF > /mnt/etc/dracut.conf.d/100-zol.conf"
+        echo "nofsck=\"yes\""
+        echo "add_dracutmodules+=\" zfs \""
+        echo "omit_dracutmodules+=\" btrfs \""
+        echo "EOF"
+        echo
+        echo "# Create an VFAT32 filesystem on BOOTDISK"
+        echo "chroot_exec \"apt-get --yes --quiet install dosfstools\""
+        echo "chroot_exec \"mkfs.vfat -F 32 \$BOOTDISK\""
+        echo
+        echo "# Create an fstab entry and mount"
+        echo "cat << EOF >> /mnt/etc/fstab"
+        echo "UUID=\"\$(blkid -s UUID -o value \$BOOTDISK)\" /boot/syslinux vfat defaults 0 0"
+        echo "EOF"
+        echo "chroot_exec \"mkdir /boot/syslinux\""
+        echo "chroot_exec \"mount /boot/syslinux\""
+        echo "# Install the syslinux package, copy modules"
+        echo "chroot_exec \"apt-get install --yes syslinux syslinux-common extlinux\""
+        echo "chroot_exec \"cp -r /usr/lib/syslinux/modules/bios/* /boot/syslinux\""
+        echo "# Install extlinux"
+        echo "chroot_exec \"extlinux --install /boot/syslinux\""
+        echo "# Install the syslinux GPTMBR data"
+        echo "chroot_exec \"dd bs=440 count=1 conv=notrunc if=/usr/lib/syslinux/mbr/gptmbr.bin of=\$DISK\""
+        echo
+        echo "chroot_exec \"DEBIAN_FRONTEND=noninteractive apt-get --yes install kexec-tools\""
+        echo
+        echo "# Install and configure ZFSBootMenu"
+        echo "# Assign command-line arguments to be used when booting the final kernel. Because ZFS properties are inherited, assign the common properties to the ROOT dataset so all children will inherit common arguments by default."
+        echo "chroot_exec \"zfs set org.zfsbootmenu:commandline='ro quiet' zroot/ROOT\""
+        echo
+        echo "# enable network"
+        echo "cat > /mnt/etc/netplan/setup.yaml <<-EOF"
+        echo "network:"
+        echo "  version: 2"
+        echo "  renderer: networkd"
+        echo "  ethernets:"
+        echo "    alleths:"
+        echo "      match:"
+        echo "        name: e*"
+        echo "      dhcp4: yes"
+        echo "      dhcp6: yes"
+        echo "EOF"
+        echo "[ -f \"\$NETPLANSETUPFILE\" ] && cp \"\$NETPLANSETUPFILE\" /mnt/etc/netplan/setup.yaml"
+        echo "chroot_exec \"netplan generate\""
+        echo "chroot_exec \"systemctl enable systemd-resolved\""
+        echo "chroot_exec \"systemctl enable systemd-networkd\""
+        echo
+        echo "# enable ssh"
+        echo "chroot_exec \"mkdir -p /root/.ssh\""
+        echo "[ -f /root/.ssh/authorized_keys ] && cp /root/.ssh/authorized_keys /mnt/root/.ssh/authorized_keys"
+        echo "chroot_exec \"apt-get install --yes openssh-{client,server} net-tools\""
+        echo "[ -f /root/.ssh/authorized_keys ] && chroot_exec \"sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/g' /etc/ssh/sshd_config\""
+        echo "[ ! -f /root/.ssh/authorized_keys ] && chroot_exec \"sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/g' /etc/ssh/sshd_config\""
+        echo "[ ! -f /root/.ssh/authorized_keys ] && chroot_exec \"sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/g' /etc/ssh/sshd_config\""
+        echo "chroot_exec \"sed -i 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/g' /etc/ssh/sshd_config\""
+        echo "chroot_exec \"sed -i 's/#Port 22/Port \$SSHPORT/g' /etc/ssh/sshd_config\""
+        echo "chroot_exec \"dpkg-reconfigure openssh-server -f noninteractive\""
+        echo
+        echo "# Install ufw"
+        echo "chroot_exec \"apt-get install --yes ufw\""
+        echo "chroot_exec \"ufw default allow outgoing\""
+        echo "chroot_exec \"ufw default deny incoming\""
+        echo "chroot_exec \"ufw allow http\""
+        echo "chroot_exec \"ufw allow https\""
+        echo "chroot_exec \"ufw allow \$SSHPORT/tcp\""
+        echo "chroot_exec \"systemctl enable ufw\""
+        echo
+        echo "# Install the ZFSBootMenu package"
+        echo "chroot_exec \"apt-get install --yes git make\""
+        echo "chroot_exec \"rm -rf /tmp/zfsbootmenu\""
+        echo "chroot_exec \"cd /tmp && git clone 'https://github.com/zbm-dev/zfsbootmenu.git' && cd zfsbootmenu && make install\""
+        echo "# Configure ZFSBootMenu"
+        echo "cat <<-EOF > /mnt/etc/zfsbootmenu/config.yaml"
+        echo "Global:"
+        echo "  ManageImages: true"
+        echo "  BootMountPoint: /boot/syslinux"
+        echo "  DracutConfDir: /etc/zfsbootmenu/dracut.conf.d"
+        echo "Components:"
+        echo "  ImageDir: /boot/syslinux/zfsbootmenu"
+        echo "  Versions: 3"
+        echo "  Enabled: true"
+        echo "  syslinux:"
+        echo "    Config: /boot/syslinux/syslinux.cfg"
+        echo "    Enabled: true"
+        echo "EFI:"
+        echo "  ImageDir: /boot/efi/EFI/ubuntu"
+        echo "  Versions: 2"
+        echo "  Enabled: false"
+        echo "Kernel:"
+        echo "  CommandLine: zbm.prefer=zroot zbm.import_policy=hostid zbm.set_hostid ro quiet loglevel=0"
+        echo "EOF"
+        echo "chroot_exec \"apt-get --yes install libconfig-inifiles-perl libsort-versions-perl libboolean-perl fzf mbuffer\""
+        echo "chroot_exec \"PERL_MM_USE_DEFAULT=1 cpan 'YAML::PP'\""
+        echo "chroot_exec \"DEBIAN_FRONTEND=noninteractive apt-get --yes install kexec-tools\""
+        echo
+        echo "if [[ \"\$DISKPASSWORD\" != \"\" && \"\$REMOTEUNLOCK\" == \"y\" ]]; then"
+        echo "  chroot_exec \"apt-get install --yes dracut-network dropbear-bin\""
+        echo "  chroot_exec \"systemctl disable dropbear\""
+        echo "  chroot_exec \"rm -rf /tmp/dracut-crypt-ssh && git clone https://github.com/dracut-crypt-ssh/dracut-crypt-ssh.git /tmp/dracut-crypt-ssh\""
+        echo "  sed -i '/inst \\\"\\\$moddir/s/^\\(.*\\)\$/#&/' /mnt/tmp/dracut-crypt-ssh/modules/60crypt-ssh/module-setup.sh"
+        echo "  chroot_exec \"cp -ri /tmp/dracut-crypt-ssh/modules/60crypt-ssh /usr/lib/dracut/modules.d\""
+        echo "  chroot_exec \"mkdir -p /etc/cmdline.d\""
+        echo "  echo 'ip=dhcp rd.neednet=1' > /mnt/etc/cmdline.d/dracut-network.conf"
+        echo "  echo 'add_dracutmodules+=\" crypt-ssh \"' >> /mnt/etc/zfsbootmenu/dracut.conf.d/dropbear.conf"
+        echo "  echo 'install_optional_items+=\" /etc/cmdline.d/dracut-network.conf \"' >> /mnt/etc/zfsbootmenu/dracut.conf.d/dropbear.conf"
+        echo "  echo 'add_dracutmodules+=\" crypt-ssh \"' >> /mnt/etc/dracut.conf.d/dropbear.conf"
+        echo "  echo 'install_optional_items+=\" /etc/cmdline.d/dracut-network.conf \"' >> /mnt/etc/dracut.conf.d/dropbear.conf"
+        echo "  chroot_exec \"dracut -v -f --regenerate-all\""
+        echo "fi"
+        echo
+        echo "chroot_exec \"generate-zbm --debug\""
+        echo "chroot_exec \"zfs snapshot -r zroot@install\""
+        echo
+        echo "# unmount everything"
+        echo "umount -n /mnt/{dev/pts,dev,sys,proc}"
+        echo "umount /mnt/boot/syslinux"
+        echo "# export the zpool"
+        echo "zpool export zroot"
+        echo
+        echo "echo \"OS setup complete. Please 'reboot' your machine.\""
+    ) > "$INSTALL_SCRIPT"
+    chmod +x "$INSTALL_SCRIPT"
+}
+
+write_script
+
+# open editor to review and make last changes to the script
+"$EDITOR" "$INSTALL_SCRIPT"
+reset
+
+clear
+
+read -p "Are you sure you want wipe the disk and install a new OS (YES is capital letter to run): " RUN_INSTALLER
+if [ "$RUN_INSTALLER" == "YES" ]; then
+    bash "$INSTALL_SCRIPT"
+else
+    echo "Cancelling installation"
+fi
