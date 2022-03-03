@@ -249,8 +249,6 @@ write_script() {
         echo "chroot_exec \"apt-get install --yes ufw\""
         echo "chroot_exec \"ufw default allow outgoing\""
         echo "chroot_exec \"ufw default deny incoming\""
-        echo "chroot_exec \"ufw allow http\""
-        echo "chroot_exec \"ufw allow https\""
         echo "chroot_exec \"ufw allow \$SSHPORT/tcp\""
         echo "chroot_exec \"systemctl enable ufw\""
         echo
