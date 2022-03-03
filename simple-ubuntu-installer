@@ -301,6 +301,8 @@ write_script() {
         echo "fi"
         echo
         echo "chroot_exec \"generate-zbm --debug\""
+        echo
+        echo "chroot_exec \"apt install --yes zfs-auto-snapshot\""
         echo "chroot_exec \"zfs snapshot -r zroot@install\""
         echo
         echo "# unmount everything"
