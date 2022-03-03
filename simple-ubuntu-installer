@@ -68,6 +68,8 @@ write_script() {
         echo "  USERPASSWORD=\$password1"
         echo "done"
         echo
+        echo "apt update"
+        echo "apt install --yes zfsutils-linux"
         echo "swapoff --all"
         echo "apt-get install --yes pv"
         echo "[ \"\${FULLDISKWIPE}\" = \"y\" ] && pv --timer --rate --stop-at-size -s \"\$(blockdev --getsize64 \$DISK)\" /dev/zero > $DISK"
