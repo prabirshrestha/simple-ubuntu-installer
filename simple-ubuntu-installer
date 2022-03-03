@@ -292,7 +292,7 @@ write_script() {
         echo "  echo 'install_items+=\" /etc/cmdline.d/dracut-network.conf \"' >> /mnt/etc/zfsbootmenu/dracut.conf.d/dropbear.conf"
         echo "  echo 'install_items+=\" /etc/cmdline.d/dracut-network.conf \"' >> /mnt/etc/zfsbootmenu/dracut.conf.d/dropbear.conf"
         echo "  chroot_exec \"echo \$DISKPASSWORD > /etc/zfs/zroot.key\""
-        echo "  chroot_exec \"chmod 600 /etc/zfs/zroot.key\""
+        echo "  chroot_exec \"chmod 000 /etc/zfs/zroot.key\""
         echo "  echo 'install_items+=\" /etc/zfs/zroot.key \"' >> /mnt/etc/dracut.conf.d/zfskey.conf"
         echo "  chroot_exec \"zfs change-key -o keylocation=file:///etc/zfs/zroot.key -o keyformat=passphrase zroot\""
         echo "  chroot_exec \"dracut -v -f --regenerate-all\""
