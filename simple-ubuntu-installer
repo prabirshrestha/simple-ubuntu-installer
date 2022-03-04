@@ -282,9 +282,8 @@ write_script() {
         echo
         echo "if [[ \"\$DISKPASSWORD\" != \"\" && \"\$REMOTEUNLOCK\" == \"y\" ]]; then"
         echo "  chroot_exec \"apt-get install --yes dracut-network dropbear-bin\""
-        echo "  chroot_exec \"systemctl disable dropbear\""
         echo "  chroot_exec \"rm -rf /tmp/dracut-crypt-ssh && mkdir -p /tmp/dracut-crypt-ssh\""
-        echo "  chroot_exec \"cd /tmp/dracut-crypt-ssh && curl -L https://github.com/dracut-crypt-ssh/tarball/master | tar xz --strip=1\""
+        echo "  chroot_exec \"cd /tmp/dracut-crypt-ssh && curl -L https://github.com/dracut-crypt-ssh/dracut-crypt-ssh/tarball/master | tar xz --strip=1\""
         echo "  sed -i '/inst \\\"\\\$moddir/s/^\\(.*\\)\$/#&/' /mnt/tmp/dracut-crypt-ssh/modules/60crypt-ssh/module-setup.sh"
         echo "  chroot_exec \"cp -ri /tmp/dracut-crypt-ssh/modules/60crypt-ssh /usr/lib/dracut/modules.d\""
         echo "  chroot_exec \"mkdir -p /etc/cmdline.d\""
