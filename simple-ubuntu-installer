@@ -68,6 +68,10 @@ write_script() {
         echo "  USERPASSWORD=\$password1"
         echo "done"
         echo
+        echo "if [[ \"\$DISKPASSWORD\" != \"\" && \"\$REMOTEUNLOCK\" == \"y\" && ! -s ~/.ssh/authorized_keys ]]; then"
+        echo "  echo \"~/.ssh/authorized_keys missing\" & exit 1"
+        echo "fi"
+        echo
         echo "apt update"
         echo "apt install --yes zfsutils-linux"
         echo "swapoff --all"
@@ -236,11 +240,11 @@ write_script() {
         echo
         echo "# enable ssh"
         echo "chroot_exec \"mkdir -p /root/.ssh\""
-        echo "[ -s /root/.ssh/authorized_keys ] && cp /root/.ssh/authorized_keys /mnt/root/.ssh/authorized_keys"
+        echo "[ -s ~/.ssh/authorized_keys ] && cp ~/.ssh/authorized_keys /mnt/root/.ssh/authorized_keys"
         echo "chroot_exec \"apt-get install --yes openssh-{client,server} net-tools\""
-        echo "[ -s /root/.ssh/authorized_keys ] && chroot_exec \"sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/g' /etc/ssh/sshd_config\""
-        echo "[ ! -s /root/.ssh/authorized_keys ] && chroot_exec \"sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/g' /etc/ssh/sshd_config\""
-        echo "[ ! -s /root/.ssh/authorized_keys ] && chroot_exec \"sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/g' /etc/ssh/sshd_config\""
+        echo "[ -s ~/.ssh/authorized_keys ] && chroot_exec \"sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/g' /etc/ssh/sshd_config\""
+        echo "[ ! -s ~/.ssh/authorized_keys ] && chroot_exec \"sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/g' /etc/ssh/sshd_config\""
+        echo "[ ! -s ~/.ssh/authorized_keys ] && chroot_exec \"sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/g' /etc/ssh/sshd_config\""
         echo "chroot_exec \"sed -i 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/g' /etc/ssh/sshd_config\""
         echo "chroot_exec \"sed -i 's/#Port 22/Port \$SSHPORT/g' /etc/ssh/sshd_config\""
         echo "chroot_exec \"dpkg-reconfigure openssh-server -f noninteractive\""
