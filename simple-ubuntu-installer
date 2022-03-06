@@ -211,7 +211,7 @@ write_script() {
         echo "  chroot_exec \"DEBIAN_FRONTEND=noninteractive apt-get --yes install refind\""
         echo "  chroot_exec \"refind-install\""
         echo "  chroot_exec \"mkdir -p /boot/efi/EFI/ubuntu\""
-        echo "  cat << EOF > /boot/efi/EFI/ubuntu/refind_linux.conf"
+        echo "  cat <<- EOF > /mnt/boot/efi/EFI/ubuntu/refind_linux.conf"
         echo "\"Boot default\"  \"zbm.prefer=zroot zbm.import_policy=hostid zbm.set_hostid ro quiet loglevel=0 zbm.skip\""
         echo "\"Boot to menu\"  \"zbm.prefer=zroot zbm.import_policy=hostid zbm.set_hostid ro quiet loglevel=0 zbm.show\""
         echo "EOF"
