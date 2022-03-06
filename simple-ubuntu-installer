@@ -202,7 +202,7 @@ write_script() {
         echo "chroot_exec \"mkfs.vfat -F 32 \$BOOTDISK\""
         echo
         echo "# Create an fstab entry and mount"
-        echo "if [[ \"\$IS_EFI\" != \"true\" ]]; then"
+        echo "if [[ \"\$IS_EFI\" == \"true\" ]]; then"
         echo "  cat << EOF >> /mnt/etc/fstab"
         echo "UUID=\"\$(blkid -s UUID -o value \$BOOTDISK)\" /boot/efi vfat defaults 0 0"
         echo "EOF"
@@ -276,7 +276,7 @@ write_script() {
         echo "chroot_exec \"rm -rf /tmp/zfsbootmenu && mkdir -p /tmp/zfsbootmenu\""
         echo "chroot_exec \"cd /tmp/zfsbootmenu && curl -L https://github.com/zbm-dev/zfsbootmenu/tarball/master | tar xz --strip=1 && make install\""
         echo "# Configure ZFSBootMenu"
-        echo "if [[ \"\$IS_EFI\" != \"true\" ]]; then"
+        echo "if [[ \"\$IS_EFI\" == \"true\" ]]; then"
         echo "cat <<-EOF > /mnt/etc/zfsbootmenu/config.yaml"
         echo "Global:"
         echo "  ManageImages: true"
@@ -346,7 +346,7 @@ write_script() {
         echo
         echo "# unmount everything"
         echo "umount -n /mnt/{dev/pts,dev,sys,proc}"
-        echo "if [[ \"\$IS_EFI\" != \"true\" ]]; then"
+        echo "if [[ \"\$IS_EFI\" == \"true\" ]]; then"
         echo "  umount /mnt/boot/efi"
         echo "else"
         echo "  umount /mnt/boot/syslinux"
