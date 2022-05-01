@@ -25,6 +25,7 @@ read -p "Remote unlock (y/n): " REMOTEUNLOCK
 read -p "Enter username: " USERNAME
 read -p "Enter ssh port: " SSHPORT
 read -p "Install docker (y/n): " INSTALLDOCKER
+read -p "Install k0s kubernetes (y/n): " INSTALLK0S
 [ -d /sys/firmware/efi ] && IS_EFI=true || IS_EFI=false
 
 write_script() {
@@ -46,6 +47,7 @@ write_script() {
         echo "export SSHPORT=$SSHPORT"
         echo "export SSHPORT=\${SSHPORT:-2222}"
         echo "export INSTALLDOCKER=$INSTALLDOCKER"
+        echo "export INSTALLK0S=$INSTALLK0S"
         echo "export NETPLANSETUPFILE=netplansetup.yaml"
         echo "export ARCH=amd64"
         echo "export OSCODENAME=jammy"
@@ -150,7 +152,7 @@ write_script() {
         echo "popd"
         echo "rm -rf /tmp/debootstrap"
         echo
-        echo "debootstrap --arch=\$ARCH \$OSCODENAME "/mnt" \"\$OSREPO\""
+        echo "debootstrap --arch=\$ARCH --include curl,vim,apt-transport-https \$OSCODENAME "/mnt" \"\$OSREPO\""
         echo "cat > /mnt/etc/apt/sources.list <<- EOF"
         echo "deb \$OSREPO \$OSCODENAME main restricted universe multiverse"
         echo "deb \$OSREPO \$OSCODENAME-updates main restricted universe multiverse"
@@ -358,6 +360,29 @@ write_script() {
         echo "    echo -e '{\n  \"storage-driver\":\"zfs\"\n}' >> /etc/docker/daemon.json"
         echo "    curl -fsSL https://get.docker.com -o /tmp/get-docker.sh"
         echo "    sh /tmp/get-docker.sh"
+        echo "  fi"
+        echo
+        echo "  if [[ \"\$INSTALLK0S\" == \"y\" ]]; then"
+        echo "    curl -sSLf https://get.k0s.sh | sh"
+        echo "    mkdir -p /etc/k0s"
+        echo "    containerd config default > /etc/k0s/containerd.toml"
+        echo "    sed -i 's/snapshotter = \"overlayfs\"/snapshotter = \"zfs\"/g' /etc/k0s/containerd.toml"
+        echo "    zfs create -o mountpoint=/var/lib/k0s/containerd/io.containerd.snapshotter.v1.zfs zroot/containerd"
+        echo "    k0s config create > /etc/k0s/k0s.yaml"
+        echo "    #k0s install controller --single -c /etc/k0s/k0s.yaml"
+        echo "    #k0s start"
+        echo "    #su \$USERNAME -c \"mkdir -p ~/.kube && sudo k0s kubeconfig admin > ~/.kube/config\""
+        echo
+        echo "    curl -s https://fluxcd.io/install.sh | bash"
+        echo
+        echo "    curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg"
+        echo "    echo \"deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main\" | sudo tee /etc/apt/sources.list.d/kubernetes.list"
+        echo "    apt-get update --yes"
+        echo "    apt-get install --yes kubectl"
+        echo
+        echo "    su \$USERNAME -c \"curl -sS https://webinstall.dev/k9s | bash\""
+        echo "    echo -c 'export PATH=\"~/.local/bin:\$PATH\"' >> /home/\$USERNAME/.bash_profile"
+        echo "    chown -R \$USERNAME /home/\$USERNAME"
         echo "  fi"
         echo
         echo "  apt-get install --yes --quiet zfs-auto-snapshot"
