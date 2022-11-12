@@ -11,6 +11,13 @@ Script to install ubuntu with ZFS root.
 bash <(curl -sL https://bit.ly/simple-ubuntu-installer)
 ```
 
+## Installing from Source
+
+```bash
+ssh-copy-id -i ~/.ssh/id_ed25519 user@host
+scp simple-ubuntu-installer user@host:/
+```
+
 ## Features
 
 * ZFS root pool using [ZFSBootMenu](https://github.com/zbm-dev/zfsbootmenu).
