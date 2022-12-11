@@ -25,6 +25,7 @@ read -p "Remote unlock (y/n): " REMOTEUNLOCK
 read -p "Enter username: " USERNAME
 read -p "Enter ssh port: " SSHPORT
 read -p "Install docker (y/n): " INSTALLDOCKER
+read -p "Install k0s (y/n): " INSTALLK0S
 [ -d /sys/firmware/efi ] && IS_EFI=true || IS_EFI=false
 
 write_script() {
@@ -46,6 +47,7 @@ write_script() {
         echo "export SSHPORT=$SSHPORT"
         echo "export SSHPORT=\${SSHPORT:-2222}"
         echo "export INSTALLDOCKER=$INSTALLDOCKER"
+        echo "export INSTALLK0S=$INSTALLK0S"
         echo "export NETPLANSETUPFILE=netplansetup.yaml"
         echo "export ARCH=amd64"
         echo "export OSCODENAME=jammy"
@@ -209,7 +211,7 @@ write_script() {
         echo "  apt-get --yes --quiet install zfsutils-linux zfs-zed"
         echo "  systemctl enable zfs.target zfs-import-cache zfs-mount zfs-import.target"
         echo
-        echo "  apt-get install --yes curl vim"
+        echo "  apt-get install --yes curl vim lnav"
         echo "  useradd --no-create-home --home /home/\$USERNAME -g users -G sudo --shell /usr/bin/bash \$USERNAME"
         echo "  [ -s /root/.ssh/authorized_keys ] && mkdir -p /home/\$USERNAME/.ssh && cp /root/.ssh/authorized_keys /home/\$USERNAME/.ssh/authorized_keys"
         echo "  chown -R \$USERNAME /home/\$USERNAME"
@@ -358,6 +360,18 @@ write_script() {
         echo "    echo -e '{\n  \"storage-driver\":\"zfs\"\n}' >> /etc/docker/daemon.json"
         echo "    curl -fsSL https://get.docker.com -o /tmp/get-docker.sh"
         echo "    sh /tmp/get-docker.sh"
+        echo "  fi"
+        echo
+        echo "  if [[ \"\$INSTALLK0S\" == \"y\" ]]; then"
+        echo "    mkdir -p /etc/k0s"
+        echo "    apt-get install --yes containerd"
+        echo "    containerd config default > /etc/k0s/containerd.toml"
+        echo "    sed -i 's/snapshotter = \\\"overlayfs\\\"/snapshotter = \\\"zfs\\\"/g' /etc/k0s/containerd.toml"
+        echo "    zfs create -o mountpoint=/var/lib/k0s/containerd/io.containerd.snapshotter.v1.zfs zroot/containerd"
+        echo "    curl -sSLf https://get.k0s.sh | sudo K0S_VERSION=v1.23.6+k0s.0 sh"
+        echo "    k0s config create > /etc/k0s/k0s.yaml"
+        echo "    k0s install controller -c /etc/k0s/k0s.yaml --enable-worker"
+        echo "    systemctl enable k0scontroller.service"
         echo "  fi"
         echo
         echo "  apt-get install --yes --quiet zfs-auto-snapshot"
