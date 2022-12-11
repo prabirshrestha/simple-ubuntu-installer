@@ -373,6 +373,11 @@ write_script() {
         echo "    k0s install controller --single -c /etc/k0s/k0s.yaml"
         echo "    curl -s https://fluxcd.io/install.sh | bash"
         echo "    systemctl enable k0scontroller.service"
+        echo "    curl -fsSLo /etc/apt/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg"
+        echo "    echo \"deb [signed-by=/etc/apt/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main\" | sudo tee /etc/apt/sources.list.d/kubernetes.list"
+        echo "    apt-get update --yes"
+        echo "    apt-get install --yes kubectl"
+        echo "    curl -sS https://webinstall.dev/k9s | bash"
         echo "  fi"
         echo
         echo "  apt-get install --yes --quiet zfs-auto-snapshot"
