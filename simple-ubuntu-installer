@@ -370,7 +370,7 @@ write_script() {
         echo "    zfs create -o mountpoint=/var/lib/k0s/containerd/io.containerd.snapshotter.v1.zfs zroot/containerd"
         echo "    curl -sSLf https://get.k0s.sh | sudo K0S_VERSION=v1.23.6+k0s.0 sh"
         echo "    k0s config create > /etc/k0s/k0s.yaml"
-        echo "    k0s install controller -c /etc/k0s/k0s.yaml --enable-worker"
+        echo "    k0s install controller --single -c /etc/k0s/k0s.yaml"
         echo "    systemctl enable k0scontroller.service"
         echo "  fi"
         echo
