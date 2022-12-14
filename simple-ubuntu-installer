@@ -280,7 +280,7 @@ write_script() {
         echo "  ufw allow \$SSHPORT/tcp"
         echo "  ufw allow http"
         echo "  ufw allow https"
-        echo "  systemctl enable ufw"
+        echo "  ufw enable"
         echo
         echo "  touch /etc/cloud/cloud-init.disabled # disable cloud-init"
         echo
