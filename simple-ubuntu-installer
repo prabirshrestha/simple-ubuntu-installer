@@ -358,7 +358,7 @@ write_script() {
         echo "  if [[ \"\$INSTALLDOCKER\" == \"y\" ]]; then"
         echo "    apt-get install --yes --quiet apparmor"
         echo "    mkdir -p /etc/docker"
-        echo "    echo -e '{\n  \"storage-driver\":\"zfs\"\n}' >> /etc/docker/daemon.json"
+        echo "    echo -e '{\"storage-driver\":\"zfs\"}' >> /etc/docker/daemon.json"
         echo "    curl -fsSL https://get.docker.com -o /tmp/get-docker.sh"
         echo "    sh /tmp/get-docker.sh"
         echo "  fi"
